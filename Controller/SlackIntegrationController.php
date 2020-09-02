@@ -23,10 +23,10 @@ class SlackIntegrationController extends BaseController
         $this->checkWebhookToken();
 
 //Debug code
-$req_dump = print_r($_REQUEST, true);
-$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
-$req_dump = print_r($_POST, true);
-$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
+//$req_dump = print_r($_REQUEST, true);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
+//$req_dump = print_r($_POST, true);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
 
         // Determine if we need to send HTTP status codes or descriptive text error messages
         $send_http_error_codes = true;
@@ -78,7 +78,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
         } //End command switch
     }
 
-    private function buildSlackBlock($cardNumber, $replace = false) {
+    private function buildSlackBlockForCard($cardNumber, $replace = false) {
         $slackMsg = array(
                           "blocks" => array()
                       );
@@ -87,11 +87,14 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
             array_push($slackMsg["blocks"], array("delete_original"=>"true"));
         }
 
+        $task = $this->taskFinderModel->getById($cardNumber);
+        $msg = '*' . $task[title] . '* (' . $task['id'] . ') _Due: ' . date("m/d/Y", $task[date_due] . '_');
+
         $addon = array( //BEGIN first section
                      "type" => "section",
                      "text" => array(
                          "type" => "mrkdwn",
-                         "text" => "*1st card* " . $cardNumber,
+                         "text" => $msg,
                      ),
                  ); //END first section
         array_push($slackMsg["blocks"], $addon);
@@ -143,9 +146,11 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
         ); //END second section
         array_push($slackMsg["blocks"], $addon);
         return($slackMsg);
-    } // END function buildSlackBlock
+    } // END function buildSlackBlockForCard
 
-    private function sendSlackBlock($block, $response_url) {
+    private function sendSlackBlockInteractive($block, $response_url) {
+        $response = "";
+
         $curl = curl_init();
         curl_setopt_array($curl, array(
             CURLOPT_URL => $response_url,
@@ -156,7 +161,27 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
         ));
         $resp = curl_exec($curl);
         curl_close($curl);
-    } // END function sendSlackBlock
+$fp = file_put_contents('/tmp/SlackIntegration.log', $resp, FILE_APPEND);
+$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($block), FILE_APPEND);
+    } //END function sendSlackBlockInteractive
+
+    private function sendSlackBlockSeparate($block) {
+        $curl = curl_init();
+
+        $curl_url = 'https://slack.com/api/chat.postEphemeral' .
+            '?token=xoxp-117646827620-117646827700-1345782606676-fbd494a23300a57dd45dbf871919a75e' .
+            '&channel=' . $_POST['channel_id'] .
+            '&user=' . $_POST['user_id'] .
+            '&text=Something%20went%20wrong%20sending%20the%20block%20to%20Slack' .
+            '&blocks=' . curl_escape($curl, json_encode($block['blocks'])) .
+            '&pretty=1';
+
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($curl, CURLOPT_URL, $curl_url);
+
+        $resp = curl_exec($curl);
+        curl_close($curl);
+    } // END function sendSlackBlockSeparate
 
     public function interactive()
     { //BEGIN function interactive
@@ -176,17 +201,18 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
         //$fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $slackUpdate['actions'][0]['text']['text'], FILE_APPEND);
         //$fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $slackUpdate['actions'][0]['value'], FILE_APPEND);
 
-        $block = $this->buildSlackBlock(100);
-        $this->sendSlackBlock($block, $slackUpdate['response_url']);
-
+        header('Content-type: application/json');
         http_response_code(200);
+        $block = $this->buildSlackBlockForCard(1166);
+//        echo json_encode($block);
+        $this->sendSlackBlockInteractive($block, $slackUpdate['response_url']); //This replies to an interactive message
     } //END function interactive
 
     public function showOverdue($subject)
     { // BEGIN function showOverdue
 
-        $block = $this->buildSlackBlock(5);
-        $this->sendSlackBlock($block, $_POST['response_url']);
+        $block = $this->buildSlackBlockForCard(1052);
+        $this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
 
         http_response_code(200);
     } // END function showOverdue
