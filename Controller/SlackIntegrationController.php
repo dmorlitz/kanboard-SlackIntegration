@@ -39,9 +39,11 @@ class SlackIntegrationController extends BaseController
         $found = false;
         $subject = "";
         foreach ($subject_fields as $subject_sent) {
-            if ( ($_REQUEST[$subject_sent] != "") && ($found == false) ) {
-                $subject = $_REQUEST[$subject_sent];
-                $found = true;
+            if (isset($_REQUEST[$subject_sent])) {
+                if ( ($_REQUEST[$subject_sent] != "") && ($found == false) ) {
+                    $subject = $_REQUEST[$subject_sent];
+                    $found = true;
+                }
             }
         }
 
@@ -88,7 +90,7 @@ class SlackIntegrationController extends BaseController
         }
 
         $task = $this->taskFinderModel->getById($cardNumber);
-        $msg = '*' . $task[title] . '* (' . $task['id'] . ') _Due: ' . date("m/d/Y", $task[date_due] . '_');
+        $msg = "*" . $task["title"] . "* (" . $task["id"] . ") _Due: " . date("m/d/Y", intval($task["date_due"])) . '_';
 
         $addon = array( //BEGIN first section
                      "type" => "section",
@@ -108,7 +110,7 @@ class SlackIntegrationController extends BaseController
                         "type" => "plain_text",
                         "text" => "Close card", //Text to appear on Button 1
                     ),
-                    "value" => "card_1", //Value to be sent with Button 1
+                    "value" => strval($cardNumber), //Value to be sent with Button 1
                 ), //END button 1 definition
                 array( //BEGIN button 2
                     "type" => "button",
@@ -116,7 +118,7 @@ class SlackIntegrationController extends BaseController
                         "type" => "plain_text",
                         "text" => "Push to Monday", //Text to appear on Button 2
                     ),
-                    "value" => "button_2", //Value to be sent with Button 2
+                    "value" => strval($cardNumber), //Value to be sent with Button 2
                 ), //END button 2 definition
                 array( //BEGIN button 3
                     "type" => "button",
@@ -124,15 +126,15 @@ class SlackIntegrationController extends BaseController
                         "type" => "plain_text",
                         "text" => "Push 7 days", //Text to appear on Button 3
                     ),
-                    "value" => "button_3", //Value to be sent with Button 3
+                    "value" => strval($cardNumber), //Value to be sent with Button 3
                 ), //END button 3 definition
                 array( //BEGIN button 4
                     "type" => "button",
                     "text" => array(
                         "type" => "plain_text",
-                        "text" => "Push to Monday", //Text to appear on Button 4
+                        "text" => "Push 30 days", //Text to appear on Button 4
                     ),
-                    "value" => "button_4", //Value to be sent with Button 4
+                    "value" => strval($cardNumber), //Value to be sent with Button 4
                 ), //END button 4 definition
                 array( //BEGIN button 5
                     "type" => "button",
@@ -140,7 +142,7 @@ class SlackIntegrationController extends BaseController
                         "type" => "plain_text",
                         "text" => "Open card", //Text to appear on Button 5
                     ),
-                    "value" => "button_5", //Value to be sent with Button 5
+                    "value" => strval($cardNumber), //Value to be sent with Button 5
                 ), //END button 5 definition
             ) //END elements definition
         ); //END second section
@@ -169,7 +171,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($block), FILE_A
         $curl = curl_init();
 
         $curl_url = 'https://slack.com/api/chat.postEphemeral' .
-            '?token=xoxp-117646827620-117646827700-1345782606676-fbd494a23300a57dd45dbf871919a75e' .
+            '?token=' . $this->configModel->get('slackintegration_token') .
             '&channel=' . $_POST['channel_id'] .
             '&user=' . $_POST['user_id'] .
             '&text=Something%20went%20wrong%20sending%20the%20block%20to%20Slack' .
@@ -195,15 +197,40 @@ $req_dump = print_r($_POST, true);
 $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
 
         $slackUpdate = json_decode($_POST['payload'],true);
+        $cardNumber = $slackUpdate['actions'][0]['value'];
+        $cardAction = $slackUpdate['actions'][0]['text']['text'];
+
         //$fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG", FILE_APPEND);
         //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
         //$fp = file_put_contents('/tmp/SlackIntegration.log', "URL = " . $slackUpdate['response_url'], FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $slackUpdate['actions'][0]['text']['text'], FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $slackUpdate['actions'][0]['value'], FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $slackUpdate['actions'][0]['text']['text'], FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $slackUpdate['actions'][0]['value'], FILE_APPEND);
+
+        // Find the task to be updated
+        $task = $this->taskFinderModel->getById($cardNumber);
+
+        // Compute the new date
+        switch ($cardAction) {
+            case 'Push 7 days':
+                $adjust = "+7 days";
+                break;
+            case 'Push 30 days':
+                $adjust = "+30 days";
+                break;
+            case 'Push to Monday':
+                $adjust = "Monday";
+                break;
+        } //END switch statement
+
+        // Store the date
+        $values['date_due'] = date('Y-m-d H:i', strtotime($adjust));
+
+        // Commit the date to the card
+        $this->task->update($values);
 
         header('Content-type: application/json');
         http_response_code(200);
-        $block = $this->buildSlackBlockForCard(1166);
+        $block = $this->buildSlackBlockForCard(1052);
 //        echo json_encode($block);
         $this->sendSlackBlockInteractive($block, $slackUpdate['response_url']); //This replies to an interactive message
     } //END function interactive
@@ -249,10 +276,10 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
 
     public function addTask($subject)
     {
-        $incomingtask_subject = $this->configModel->get('incomingtask_subject');
-        $incomingtask_project_id  = $this->configModel->get('incomingtask_project_id');
-        $incomingtask_column_id   = $this->configModel->get('incomingtask_column_id');
-        $incomingtask_swimlane_id = $this->configModel->get('incomingtask_swimlane_id');
+        $incomingtask_subject = $this->configModel->get('slackintegration_subject');
+        $incomingtask_project_id  = $this->configModel->get('slackintegration_project_id');
+        $incomingtask_column_id   = $this->configModel->get('slackintegration_column_id');
+        $incomingtask_swimlane_id = $this->configModel->get('slackintegration_swimlane_id');
 
         //if ( (isset($_REQUEST['response_url'])) && (strpos($_REQUEST['response_url'], "slack.com") !== false) ) { $send_http_error_codes = false; }
 

@@ -1,6 +1,9 @@
 <h3><img src="<?= $this->url->dir() ?>plugins/Mailgun/mailgun-icon.png"/>&nbsp;Slack Integration</h3>
 <div class="panel">
 
+    <?= $this->form->label(t('Slack token'), 'slackintegration_token') ?>
+    <?= $this->form->text('slackintegration_token', $values) ?>
+
     <?= $this->form->label(t('Protocol://Hostname:port to use for incoming task webhook (NO trailing slash)'), 'slackintegration_host_port') ?>
     <?= $this->form->text('slackintegration_host_port', $values) ?>
 
