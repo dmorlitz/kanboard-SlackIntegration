@@ -223,10 +223,13 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
         } //END switch statement
 
         // Store the date
-        $values['date_due'] = date('Y-m-d H:i', strtotime($adjust));
+        $values = array(
+            'id' => $cardNumber,
+            'date_due' => date('Y-m-d H:i', strtotime($adjust)),
+        );
 
         // Commit the date to the card
-        $this->task->update($values);
+        $this->taskModificationModel->update($values, false);
 
         header('Content-type: application/json');
         http_response_code(200);
