@@ -3,6 +3,7 @@
 namespace Kanboard\Plugin\SlackIntegration\Controller;
 
 use Kanboard\Controller\BaseController;
+use Kanboard\Model\TaskModel;
 
 /**
  * SlackIntegration Controller
@@ -79,37 +80,10 @@ class SlackIntegrationController extends BaseController
         } //End command switch
     }
 
-    private function getCommentTextModal($cardNumber, $responseURL) {
-        $modal = array("type" => "modal", "title" => array(), "submit" => array(), "blocks" => array() );
-
-        $modal["title"]["type"] = "plain_text";
-        $modal["title"]["text"] = "Comment to add";
-        $modal["title"]["emoji"] = true;
-
-        $modal["submit"]["type"] = "plain_text";
-        $modal["submit"]["text"] = "Save";
-        $modal["submit"]["emoji"] = true;
-
-        $modalBlocks = array(
-            "type" => "input",
-            "element" => array("type" => "plain_text_input"),
-            "label" => array(
-                           "type" => "plain_text",
-                           "text" => "Comment to add to task #",
-                           "emoji" => true,
-                       )
-        );
-        array_push($modal["blocks"], $modalBlocks);
-
+    private function openCommentTextDialog($cardNumber, $responseURL, $triggerID) {
         header('Content-type: application/json');
         http_response_code(200);
-        $this->sendSlackBlockInteractive($modal, $responseURL);
-        echo json_encode($modal);
 
-$fp = file_put_contents('/tmp/SlackIntegration.log', "Sending modal", FILE_APPEND);
-$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($modal), FILE_APPEND);
-$fp = file_put_contents('/tmp/SlackIntegration.log', $responseURL, FILE_APPEND);
-//dmm
     } // END function getCommentTextModal
 
 
@@ -208,17 +182,11 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $responseURL, FILE_APPEND);
         ));
         $resp = curl_exec($curl);
         curl_close($curl);
+$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($block), FILE_APPEND);
+$fp = file_put_contents('/tmp/SlackIntegration.log', $resp, FILE_APPEND);
     } //END function sendSlackBlockInteractive
 
     private function sendSlackBlockSeparate($block) {
-        //$curl_url = 'https://slack.com/api/chat.postEphemeral' .
-        //    '?token=' . $this->configModel->get('slackintegration_token') .
-        //    '&channel=' . $_POST['channel_id'] .
-        //    '&user=' . $_POST['user_id'] .
-        //    '&text=Something%20went%20wrong%20sending%20the%20block%20to%20Slack' .
-        //    '&blocks=' . curl_escape($curl, json_encode($block['blocks'])) .
-        //    '&pretty=1';
-
         $slackMsg = array(
             "token" => $this->configModel->get('slackintegration_token'),
             "channel" => $_POST['channel_id'],
@@ -306,6 +274,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $responseURL, FILE_APPEND);
         $cardNumber = $slackUpdate['actions'][0]['value'];
         $cardAction = $slackUpdate['actions'][0]['text']['text'];
         $responseURL = $slackUpdate['response_url'];
+        $triggerID = $slackUpdate['trigger_id'];
 
         $fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG");
         $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
@@ -331,7 +300,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $responseURL, FILE_APPEND);
                 $this->pushCardFromSlack($cardNumber, $responseURL, $adjust);
                 break;
             case 'Add comment':
-                $this->getCommentTextModal($cardNumber, $responseURL);
+                $this->openCommentTextDialog($cardNumber, $responseURL, $triggerID);
                 break;
             case 'Close card':
                 $this->closeCardFromSlack($cardNumber, $responseURL);
@@ -350,13 +319,19 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $responseURL, FILE_APPEND);
         $this->buildSlackBlocksForCollection($overdue);
     } // END function showOverdue
 
-    public function showSearchedTasks()
+    public function showSearchedTasks($searchString)
     { // BEGIN function showOverdue
         // Start generating blocks for overdue Kanboard cards
-//        $overdue = $this->taskFinderModel->getOverdueTasks();
-var_dump($this->taskQuery);
-        // Call the renderer
-//        $this->buildSlackBlocksForCollection($overdue);
+        $searchResults = $this->db
+                ->table(TaskModel::TABLE)
+                ->ilike(TaskModel::TABLE . '.title', '%' . $searchString . '%')
+                ->eq(TaskModel::TABLE.'.is_active', TaskModel::STATUS_OPEN)
+                ->findAllByColumn(TaskModel::TABLE . '.id');
+
+        foreach ($searchResults as $id => $taskNum) {
+           $block = $this->buildSlackBlockForCard($taskNum);
+           $this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
+        }
     } // END function showOverdue
 
     public function buildSlackBlocksForCollection($taskCollection) {
@@ -370,9 +345,6 @@ var_dump($this->taskQuery);
         http_response_code(200);
         header("Connection: close");
         ignore_user_abort(true); // just to be safe
-        //echo('Generating Slack messages for overdue Kanboard tasks now');
-        //$size = ob_get_length();
-        //header("Content-Length: " . strval($size));
         header("Content-Length: 0");
         ob_end_flush(); // Strange behaviour, will not work
         ob_flush();
@@ -408,6 +380,13 @@ var_dump($this->taskQuery);
                                "text" => array(
                                    "type" => "mrkdwn",
                                    "text" => "*/kanboard add _<task name>_* = Add a new task with the name _<task name>_",
+                               ),
+                           ), //END second section
+                           array( //BEGIN second section
+                               "type" => "section",
+                               "text" => array(
+                                   "type" => "mrkdwn",
+                                   "text" => "~*/kanboard comment _<task number>_ _<task name>_* = Add a comment _task name_ to card _<task number>_~",
                                ),
                            ), //END second section
                            array( //BEGIN third section
