@@ -67,7 +67,10 @@ class SlackIntegrationController extends BaseController
                 $this->help();
                 break;
             case 'overdue':
-                $this->showOverdue($subject);
+                $this->showOverdue();
+                break;
+            case 'search':
+                $this->showSearchedTasks(substr($subject,7));
                 break;
             default:
                 if ($send_http_error_codes) { http_response_code(200); }
@@ -75,6 +78,40 @@ class SlackIntegrationController extends BaseController
                 break;
         } //End command switch
     }
+
+    private function getCommentTextModal($cardNumber, $responseURL) {
+        $modal = array("type" => "modal", "title" => array(), "submit" => array(), "blocks" => array() );
+
+        $modal["title"]["type"] = "plain_text";
+        $modal["title"]["text"] = "Comment to add";
+        $modal["title"]["emoji"] = true;
+
+        $modal["submit"]["type"] = "plain_text";
+        $modal["submit"]["text"] = "Save";
+        $modal["submit"]["emoji"] = true;
+
+        $modalBlocks = array(
+            "type" => "input",
+            "element" => array("type" => "plain_text_input"),
+            "label" => array(
+                           "type" => "plain_text",
+                           "text" => "Comment to add to task #",
+                           "emoji" => true,
+                       )
+        );
+        array_push($modal["blocks"], $modalBlocks);
+
+        header('Content-type: application/json');
+        http_response_code(200);
+        $this->sendSlackBlockInteractive($modal, $responseURL);
+        echo json_encode($modal);
+
+$fp = file_put_contents('/tmp/SlackIntegration.log', "Sending modal", FILE_APPEND);
+$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($modal), FILE_APPEND);
+$fp = file_put_contents('/tmp/SlackIntegration.log', $responseURL, FILE_APPEND);
+//dmm
+    } // END function getCommentTextModal
+
 
     private function buildSlackBlockForCard($cardNumber) {
         $task = $this->taskFinderModel->getByID($cardNumber);
@@ -89,9 +126,14 @@ class SlackIntegrationController extends BaseController
         $cardURL = $this->configModel->get("application_url") . "?controller=TaskViewController&action=show&" .
                    "task_id=" . $cardNumber . "&project_id=" . $task["project_id"];
 
+        $comments = $this->commentModel->getAll($task['id'], 'ASC');
+        foreach ($comments as $comment) {
+            $display_comment = date("m/d/Y", $comment['date_creation']) . ': ' . $comment['comment'];
+        }
+
         $msg = "*" . $task["title"] . "* (" . $task["id"] . ") \n" .
                      "_Due: " . date("m/d/Y", intval($task["date_due"])) . "_\n" .
-                     "Last comment: " . "\n<" . $cardURL . "|Open in browser>";
+                     "Last comment: " . $display_comment . "\n<" . $cardURL . "|Open in browser>";
 
         $addon = array( //BEGIN first section
                      "type" => "section",
@@ -141,7 +183,7 @@ class SlackIntegrationController extends BaseController
                     "type" => "button",
                     "text" => array(
                         "type" => "plain_text",
-                        "text" => "Open card", //Text to appear on Button 5
+                        "text" => "Add comment", //Text to appear on Button 5
                     ),
                     "value" => strval($cardNumber), //Value to be sent with Button 5
                 ), //END button 5 definition
@@ -265,11 +307,11 @@ class SlackIntegrationController extends BaseController
         $cardAction = $slackUpdate['actions'][0]['text']['text'];
         $responseURL = $slackUpdate['response_url'];
 
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG", FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "URL = " . $slackUpdate['response_url'], FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $slackUpdate['actions'][0]['text']['text'], FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $slackUpdate['actions'][0]['value'], FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG");
+        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "URL = " . $slackUpdate['response_url'], FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $slackUpdate['actions'][0]['text']['text'], FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $slackUpdate['actions'][0]['value'], FILE_APPEND);
 
         // Find the task to be updated
         $task = $this->taskFinderModel->getById($cardNumber);
@@ -289,7 +331,7 @@ class SlackIntegrationController extends BaseController
                 $this->pushCardFromSlack($cardNumber, $responseURL, $adjust);
                 break;
             case 'Add comment':
-                $adjust = "Monday";
+                $this->getCommentTextModal($cardNumber, $responseURL);
                 break;
             case 'Close card':
                 $this->closeCardFromSlack($cardNumber, $responseURL);
@@ -298,8 +340,26 @@ class SlackIntegrationController extends BaseController
 
     } //END function interactive
 
-    public function showOverdue($subject)
+    public function showOverdue()
     { // BEGIN function showOverdue
+        // Start generating blocks for overdue Kanboard cards
+        $overdue = $this->taskFinderModel->getOverdueTasks();
+        $overdue = $this->taskFinderModel->getOverdueTasksByProject(17);
+
+        // Call the renderer
+        $this->buildSlackBlocksForCollection($overdue);
+    } // END function showOverdue
+
+    public function showSearchedTasks()
+    { // BEGIN function showOverdue
+        // Start generating blocks for overdue Kanboard cards
+//        $overdue = $this->taskFinderModel->getOverdueTasks();
+var_dump($this->taskQuery);
+        // Call the renderer
+//        $this->buildSlackBlocksForCollection($overdue);
+    } // END function showOverdue
+
+    public function buildSlackBlocksForCollection($taskCollection) {
 
         // It could take some time to generate the output depending on the number of blocks
         // Slack requires an acknowledgement within 3 seconds, so we will send one
@@ -317,21 +377,18 @@ class SlackIntegrationController extends BaseController
         ob_end_flush(); // Strange behaviour, will not work
         ob_flush();
         flush(); // Unless both are called !
+        @flush(); // Unless both are called !
         // Slack request has been acknowledged
 
-        // Start generating blocks for overdue Kanboard cards
-        $overdue = $this->taskFinderModel->getOverdueTasks();
-        foreach ($overdue as $id => $task) {
-            // DMM: This is extraneous - the data is already in $block - I need to figure out how to separate it and
-            //      send it directly using buildSendBlockForCardArray()
-            $block = $this->buildSlackBlockForCard($task['id']);
+        foreach ($taskCollection as $id => $task) {
+            $block = $this->buildSlackBlockForCardArray($task, $task['id']);
             $this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
         }
 
         // Diagnostic code to print a single block
         //$block = $this->buildSlackBlockForCard(1052);
         //$this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
-    } // END function showOverdue
+    } // END function buildSlackBlocksForCollection
 
     public function help()
     { // BEGIN function help
@@ -350,7 +407,7 @@ class SlackIntegrationController extends BaseController
                                "type" => "section",
                                "text" => array(
                                    "type" => "mrkdwn",
-                                   "text" => "*/kanboard add <task name>* = Add a new task with the name <task name>",
+                                   "text" => "*/kanboard add _<task name>_* = Add a new task with the name _<task name>_",
                                ),
                            ), //END second section
                            array( //BEGIN third section
@@ -358,6 +415,13 @@ class SlackIntegrationController extends BaseController
                                "text" => array(
                                    "type" => "mrkdwn",
                                    "text" => "*/kanboard overdue* = Display all overdue tasks",
+                               ),
+                           ), //END third section
+                           array( //BEGIN third section
+                               "type" => "section",
+                               "text" => array(
+                                   "type" => "mrkdwn",
+                                   "text" => "*/kanboard search _<string>_* = Search for tasks with name _<string>_",
                                ),
                            ), //END third section
                        ), //END of blocks
