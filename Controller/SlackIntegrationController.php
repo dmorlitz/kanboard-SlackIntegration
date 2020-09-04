@@ -81,8 +81,69 @@ class SlackIntegrationController extends BaseController
     }
 
     private function openCommentTextDialog($cardNumber, $responseURL, $triggerID) {
+
+        $task = $this->taskFinderModel->getByID($cardNumber);
+
         header('Content-type: application/json');
         http_response_code(200);
+
+        $view = array(
+                   "title" => array("type"=>"plain_text", "text"=>"Adding Kanboard comment"),
+                   "submit" => array("type"=>"plain_text", "text"=>"Add comment"),
+                   "type"=>"modal",
+                   "blocks"=> array(
+                                array(
+                                  "type"=>"input",
+                                  "element"=>array(
+                                                  "type"=>"plain_text_input",
+                                                  "action_id"=>"comment_text",
+                                                  "placeholder"=>array("type"=>"plain_text","text"=>"Add comment here"),
+                                                  ),
+                                  "label"=>array("type"=>"plain_text","text"=>"Comment to add"),
+                                  "hint"=>array("type"=>"plain_text","text"=>$task['id'] . ": Adding comment to the task named '" . $task["title"] . "'"),
+                                ),
+                                array(
+                                  "type"=>"input",
+                                  "element"=>array(
+                                                  "type"=>"conversations_select",
+                                                  "action_id"=>"comment_text",
+                                                  "placeholder"=>array("type"=>"plain_text","text"=>"Please do not change"),
+                                                  "response_url_enabled"=>true,
+                                                  "default_to_current_conversation"=>true,
+                                                  ),
+                                  "label"=>array("type"=>"plain_text","text"=>"Update goes to"),
+                                  "hint"=>array("type"=>"plain_text","text"=>"Please do not change this value - all responses will go only to you"),
+                                ),
+                              ),
+                );
+
+        $slackMsg = array(
+            "token" => $this->configModel->get('slackintegration_token'),
+            "trigger_id" => $triggerID,
+            "view" => json_encode($view),
+        ); //END of slackMsg array
+
+        $curl = curl_init();
+
+        $curlHeaders = array();
+        $curlHeaders[] = 'Content-Type: application/json; charset=utf-8';
+        $curlHeaders[] = 'Authorization: Bearer ' . $this->configModel->get('slackintegration_token');
+
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => "https://slack.com/api/views.open",
+            CURLOPT_POST => 1,
+            CURLOPT_BINARYTRANSFER => TRUE,
+            CURLOPT_HTTPHEADER => $curlHeaders,
+            CURLOPT_RETURNTRANSFER => 1,
+            CURLOPT_POSTFIELDS => json_encode($slackMsg),
+        ));
+        $resp = curl_exec($curl);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($slackMsg));
+//$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($resp,true), FILE_APPEND);
+//var_dump($curlHeaders);
+//var_dump($slackMsg);
+//var_dump($resp);
+        curl_close($curl);
 
     } // END function getCommentTextModal
 
@@ -100,6 +161,7 @@ class SlackIntegrationController extends BaseController
         $cardURL = $this->configModel->get("application_url") . "?controller=TaskViewController&action=show&" .
                    "task_id=" . $cardNumber . "&project_id=" . $task["project_id"];
 
+        $display_comment = "";
         $comments = $this->commentModel->getAll($task['id'], 'ASC');
         foreach ($comments as $comment) {
             $display_comment = date("m/d/Y", $comment['date_creation']) . ': ' . $comment['comment'];
@@ -161,6 +223,14 @@ class SlackIntegrationController extends BaseController
                     ),
                     "value" => strval($cardNumber), //Value to be sent with Button 5
                 ), //END button 5 definition
+                array( //BEGIN button 5
+                    "type" => "button",
+                    "text" => array(
+                        "type" => "plain_text",
+                        "text" => "Refresh card", //Text to appear on Button 5
+                    ),
+                    "value" => strval($cardNumber), //Value to be sent with Button 5
+                ), //END button 5 definition
             ) //END elements definition
         ); //END second section
 
@@ -182,8 +252,8 @@ class SlackIntegrationController extends BaseController
         ));
         $resp = curl_exec($curl);
         curl_close($curl);
-$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($block), FILE_APPEND);
-$fp = file_put_contents('/tmp/SlackIntegration.log', $resp, FILE_APPEND);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($block), FILE_APPEND);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', $resp, FILE_APPEND);
     } //END function sendSlackBlockInteractive
 
     private function sendSlackBlockSeparate($block) {
@@ -265,22 +335,68 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $resp, FILE_APPEND);
         $this->checkWebhookToken();
 
 //Debug code
-//$req_dump = print_r($_REQUEST, true);
-//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
+$req_dump = print_r($_REQUEST, true);
+$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
 //$req_dump = print_r($_POST, true);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
 
+        // Decode the incoming JSON request
         $slackUpdate = json_decode($_POST['payload'],true);
+
+        if ($slackUpdate['type'] == "block_actions") {
+            $this->slackButtonPushed($slackUpdate);
+        }
+
+        if ($slackUpdate['type'] == "view_submission") {
+            $this->slackCommentSent($slackUpdate);
+        }
+
+    } //END function interactive
+
+    private function slackCommentSent($slackUpdate) {
+        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
+
+        $cardHint = explode(":", $slackUpdate["view"]["blocks"][0]["hint"]["text"]);
+        $cardNum = $cardHint[0];
+
+        $responseURL = $slackUpdate["response_urls"][0]["response_url"];
+
+        $commandArray = $slackUpdate["view"]["state"]["values"]; //Get the values portion of the JSON
+        $firstKey = array_key_first($commandArray); //This key always seems to change in the JSON
+        $newComment = $commandArray[$firstKey]["comment_text"]["value"];
+
+        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($commandArray,true) . "\n", FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', $cardNum . "\n", FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', $firstKey . "\n", FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', $newComment . "\n", FILE_APPEND);
+
+        $task = $this->taskFinderModel->getById($cardNum);
+        $this->commentModel->create(array(
+            'comment' => $newComment,
+            'task_id' => intval($cardNum),
+        ));
+
+        $block = $this->buildSlackBlockForCard($cardNum);
+        $this->sendSlackBlockInteractive($block, $responseURL); // Send a card as a reponse to a given request
+
+//dmm
+
+    } //END function slackCommentSent
+
+    private function slackButtonPushed($slackUpdate) {
+
+        // Get the necessary variables
         $cardNumber = $slackUpdate['actions'][0]['value'];
         $cardAction = $slackUpdate['actions'][0]['text']['text'];
         $responseURL = $slackUpdate['response_url'];
         $triggerID = $slackUpdate['trigger_id'];
 
-        $fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG");
-        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', "URL = " . $slackUpdate['response_url'], FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $slackUpdate['actions'][0]['text']['text'], FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $slackUpdate['actions'][0]['value'], FILE_APPEND);
+        // Debug statemetns
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', "URL = " . $slackUpdate['response_url'], FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $slackUpdate['actions'][0]['text']['text'], FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $slackUpdate['actions'][0]['value'], FILE_APPEND);
 
         // Find the task to be updated
         $task = $this->taskFinderModel->getById($cardNumber);
@@ -302,12 +418,14 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $resp, FILE_APPEND);
             case 'Add comment':
                 $this->openCommentTextDialog($cardNumber, $responseURL, $triggerID);
                 break;
+            case 'Refresh card':
+                $this->refreshCardToSlack($cardNumber, $responseURL);
+                break;
             case 'Close card':
                 $this->closeCardFromSlack($cardNumber, $responseURL);
                 break;
         } //END switch statement
-
-    } //END function interactive
+    } //END function slackButtonPushed
 
     public function showOverdue()
     { // BEGIN function showOverdue
@@ -328,9 +446,13 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $resp, FILE_APPEND);
                 ->eq(TaskModel::TABLE.'.is_active', TaskModel::STATUS_OPEN)
                 ->findAllByColumn(TaskModel::TABLE . '.id');
 
-        foreach ($searchResults as $id => $taskNum) {
-           $block = $this->buildSlackBlockForCard($taskNum);
-           $this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
+        if ($searchResults == array() ) {
+           print_r("No tasks found for search string '" . $searchString . "'");
+        } else {
+            foreach ($searchResults as $id => $taskNum) {
+               $block = $this->buildSlackBlockForCard($taskNum);
+               $this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
+            }
         }
     } // END function showOverdue
 
