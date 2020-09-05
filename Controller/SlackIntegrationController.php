@@ -25,7 +25,7 @@ class SlackIntegrationController extends BaseController
 
 //Debug code
 //$req_dump = print_r($_REQUEST, true);
-//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
 //$req_dump = print_r($_POST, true);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
 
@@ -138,7 +138,7 @@ class SlackIntegrationController extends BaseController
             CURLOPT_POSTFIELDS => json_encode($slackMsg),
         ));
         $resp = curl_exec($curl);
-//$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($slackMsg));
+//$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($slackMsg), FILE_APPEND);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($resp,true), FILE_APPEND);
 //var_dump($curlHeaders);
 //var_dump($slackMsg);
@@ -180,6 +180,48 @@ class SlackIntegrationController extends BaseController
                  ); //END first section
         array_push($slackMsg["blocks"], $addon);
 
+        $options = array(
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Close card", "emoji"=>true),
+                              "value"=>"Close card:" . strval($cardNumber),
+                             ),
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Push 7 days", "emoji"=>true),
+                              "value"=>"Push 7 days:" . strval($cardNumber),
+                             ),
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Push 30 days", "emoji"=>true),
+                              "value"=>"Push 30 days:" . strval($cardNumber),
+                             ),
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Push to Monday", "emoji"=>true),
+                              "value"=>"Push to Monday:" . strval($cardNumber),
+                             ),
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Add comment", "emoji"=>true),
+                              "value"=>"Add comment:" . strval($cardNumber),
+                             ),
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Refresh card", "emoji"=>true),
+                              "value"=>"Refresh card:" . strval($cardNumber),
+                             ),
+                   );
+
+        $addon = array( //BEGIN dropdown
+                      "type" => "actions",
+                      "elements" => array(array(
+                          "type" => "static_select",
+                          "placeholder" => array("type"=>"plain_text", "text"=>"Kanboard Actions", "emoji"=>true),
+                          "options" => $options,
+                      )),
+                 ); //END first section
+        array_push($slackMsg["blocks"], $addon);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', "=============ADDON=============\n", FILE_APPEND);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($addon,JSON_PRETTY_PRINT), FILE_APPEND);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', "=============ADDON=============\n", FILE_APPEND);
+
+/*
+        //This code created 6 unique buttons in Slack
         $addon = array( //BEGIN new button array
             "type" => "actions", //Define as an action
             "elements" => array( //BEGIN elements definition
@@ -233,8 +275,9 @@ class SlackIntegrationController extends BaseController
                 ), //END button 5 definition
             ) //END elements definition
         ); //END second section
-
         array_push($slackMsg["blocks"], $addon);
+        //END Creating 6 unique buttons in Slack
+*/
 
         return($slackMsg);
     } // END function buildSlackBlockForCard
@@ -285,6 +328,8 @@ class SlackIntegrationController extends BaseController
 //var_dump($slackMsg);
 //var_dump($resp);
         curl_close($curl);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackMsg,true), FILE_APPEND);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($resp,true), FILE_APPEND);
     } // END function sendSlackBlockSeparate
 
     public function pushCardFromSlack($cardNumber, $responseURL, $adjust) {
@@ -335,8 +380,10 @@ class SlackIntegrationController extends BaseController
         $this->checkWebhookToken();
 
 //Debug code
-$req_dump = print_r($_REQUEST, true);
-$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
+$fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
+
+//$req_dump = print_r($_REQUEST, true);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
 //$req_dump = print_r($_POST, true);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
 
@@ -344,7 +391,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
         $slackUpdate = json_decode($_POST['payload'],true);
 
         if ($slackUpdate['type'] == "block_actions") {
-            $this->slackButtonPushed($slackUpdate);
+            $this->slackActionSelected($slackUpdate);
         }
 
         if ($slackUpdate['type'] == "view_submission") {
@@ -354,7 +401,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
     } //END function interactive
 
     private function slackCommentSent($slackUpdate) {
-        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
 
         $cardHint = explode(":", $slackUpdate["view"]["blocks"][0]["hint"]["text"]);
         $cardNum = $cardHint[0];
@@ -365,10 +412,10 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
         $firstKey = array_key_first($commandArray); //This key always seems to change in the JSON
         $newComment = $commandArray[$firstKey]["comment_text"]["value"];
 
-        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($commandArray,true) . "\n", FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', $cardNum . "\n", FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', $firstKey . "\n", FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', $newComment . "\n", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($commandArray,true) . "\n", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', $cardNum . "\n", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', $firstKey . "\n", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', $newComment . "\n", FILE_APPEND);
 
         $task = $this->taskFinderModel->getById($cardNum);
         $this->commentModel->create(array(
@@ -378,25 +425,28 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
 
         $block = $this->buildSlackBlockForCard($cardNum);
         $this->sendSlackBlockInteractive($block, $responseURL); // Send a card as a reponse to a given request
-
-//dmm
-
     } //END function slackCommentSent
 
-    private function slackButtonPushed($slackUpdate) {
+    private function slackActionSelected($slackUpdate) {
 
         // Get the necessary variables
-        $cardNumber = $slackUpdate['actions'][0]['value'];
-        $cardAction = $slackUpdate['actions'][0]['text']['text'];
-        $responseURL = $slackUpdate['response_url'];
+        //$cardNumber = $slackUpdate['actions'][0]['value']; //This works when a button is pressed
+        //$cardAction = $slackUpdate['actions'][0]['text']['text']; //This works when a button is pressed
+
+        $slackRequest = explode(':',$slackUpdate['actions'][0]['selected_option']['value']);
+
+        $cardAction = $slackRequest[0];
+        $cardNumber = $slackRequest[1];
+
         $triggerID = $slackUpdate['trigger_id'];
+        $responseURL = $slackUpdate['response_url'];
 
         // Debug statemetns
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG", FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "URL = " . $slackUpdate['response_url'], FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $slackUpdate['actions'][0]['text']['text'], FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $slackUpdate['actions'][0]['value'], FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG", FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "URL = " . $slackUpdate['response_url'], FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $cardAction, FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $cardNumber, FILE_APPEND);
 
         // Find the task to be updated
         $task = $this->taskFinderModel->getById($cardNumber);
@@ -425,7 +475,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump);
                 $this->closeCardFromSlack($cardNumber, $responseURL);
                 break;
         } //END switch statement
-    } //END function slackButtonPushed
+    } //END function slackActionSelected
 
     public function showOverdue()
     { // BEGIN function showOverdue
