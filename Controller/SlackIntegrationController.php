@@ -208,12 +208,12 @@ class SlackIntegrationController extends BaseController
         $column = $this->columnModel->getById($task["column_id"]);
         $swimlane = $this->swimlaneModel->getById($task["swimlane_id"]);
         $displayFields = array(
-                             array("type"=>"mrkdwn","text"=>"_Due: " . date("m/d/Y", intval($task["date_due"])) . "_\n"),
-                             array("type"=>"mrkdwn","text"=>"Project: " . $project["name"]),
+                             array("type"=>"mrkdwn","text"=>"_Due: `" . date("m/d/Y", intval($task["date_due"])) . "`_"),
+                             array("type"=>"mrkdwn","text"=>"Project: `" . $project["name"] ."`"),
                              array("type"=>"mrkdwn","text"=>"<" . $cardURL . "|Open in browser>"),
-                             array("type"=>"mrkdwn","text"=>"Column: " . $column["title"]),
+                             array("type"=>"mrkdwn","text"=>"Column: `" . $column["title"] ."`"),
                              array("type"=>"mrkdwn","text"=>"Last comment: " . $display_comment),
-                             array("type"=>"mrkdwn","text"=>"Swimlane: " . $swimlane["name"]),
+                             array("type"=>"mrkdwn","text"=>"Swimlane: `" . $swimlane["name"] . "`"),
                          );
         $cardDetails = array(
                              "type"=>"section",
