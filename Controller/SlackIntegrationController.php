@@ -3,7 +3,11 @@
 namespace Kanboard\Plugin\SlackIntegration\Controller;
 
 use Kanboard\Controller\BaseController;
+use Kanboard\Model\CommentModel;
 use Kanboard\Model\TaskModel;
+use Kanbaord\Model\ProjectModel;
+use Kanbaord\Model\ColumnModel;
+use Kanbaord\Model\SwimlaneModel;
 
 /**
  * SlackIntegration Controller
@@ -68,10 +72,15 @@ class SlackIntegrationController extends BaseController
                 $this->help();
                 break;
             case 'overdue':
+                $this->respondOK(); //This operation could take a while and responds separately - acknowledge request to Slack
                 $this->showOverdue();
                 break;
             case 'search':
                 $this->showSearchedTasks(substr($subject,7));
+                break;
+            case 'display':
+                $block = $this->buildSlackBlockForCard($arr[1]);
+                $this->sendSlackBlockSeparate($block, $responseURL);
                 break;
             default:
                 if ($send_http_error_codes) { http_response_code(200); }
@@ -167,9 +176,13 @@ class SlackIntegrationController extends BaseController
             $display_comment = date("m/d/Y", $comment['date_creation']) . ': ' . $comment['comment'];
         }
 
+        // Original combined single markdown
         $msg = "*" . $task["title"] . "* (" . $task["id"] . ") \n" .
                      "_Due: " . date("m/d/Y", intval($task["date_due"])) . "_\n" .
                      "Last comment: " . $display_comment . "\n<" . $cardURL . "|Open in browser>";
+
+
+        $msg = "*" . $task["title"] . "* (" . $task["id"] . ")";
 
         $addon = array( //BEGIN first section
                      "type" => "section",
@@ -179,6 +192,24 @@ class SlackIntegrationController extends BaseController
                      ),
                  ); //END first section
         array_push($slackMsg["blocks"], $addon);
+
+        // Text fields are displayed left to right, not up to down, so you have to alternate columns
+        $project = $this->projectModel->getById($task["project_id"]);
+        $column = $this->columnModel->getById($task["column_id"]);
+        $swimlane = $this->swimlaneModel->getById($task["swimlane_id"]);
+        $displayFields = array(
+                             array("type"=>"mrkdwn","text"=>"_Due: " . date("m/d/Y", intval($task["date_due"])) . "_\n"),
+                             array("type"=>"mrkdwn","text"=>"Project: " . $project["name"]),
+                             array("type"=>"mrkdwn","text"=>"<" . $cardURL . "|Open in browser>"),
+                             array("type"=>"mrkdwn","text"=>"Column: " . $column["title"]),
+                             array("type"=>"mrkdwn","text"=>"Last comment: " . $display_comment),
+                             array("type"=>"mrkdwn","text"=>"Swimlane: " . $swimlane["name"]),
+                         );
+        $cardDetails = array(
+                             "type"=>"section",
+                             "fields"=>$displayFields,
+                            );
+        array_push($slackMsg["blocks"], $cardDetails);
 
         $options = array(
                         array(
@@ -497,8 +528,9 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                 ->findAllByColumn(TaskModel::TABLE . '.id');
 
         if ($searchResults == array() ) {
-           print_r("No tasks found for search string '" . $searchString . "'");
+           echo "No tasks found for search string '" . $searchString . "'";
         } else {
+            $this->respondOK(); //This operation could take a while and responds separately - acknowledge request to Slack
             foreach ($searchResults as $id => $taskNum) {
                $block = $this->buildSlackBlockForCard($taskNum);
                $this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
@@ -506,23 +538,33 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
         }
     } // END function showOverdue
 
-    public function buildSlackBlocksForCollection($taskCollection) {
+    protected function respondOK()
+    {
+        // check if fastcgi_finish_request is callable
+        if (is_callable('fastcgi_finish_request')) {
+            /*
+             * This works in Nginx but the next approach not
+             */
+            session_write_close();
+            fastcgi_finish_request();
+            return;
+        } //END function respondOK
 
-        // It could take some time to generate the output depending on the number of blocks
-        // Slack requires an acknowledgement within 3 seconds, so we will send one
-        // Each overdue card block is generated and sent separately
+        ignore_user_abort(true);
 
-        ob_end_clean();
         ob_start();
-        http_response_code(200);
-        header("Connection: close");
-        ignore_user_abort(true); // just to be safe
-        header("Content-Length: 0");
-        ob_end_flush(); // Strange behaviour, will not work
+        $serverProtocol = filter_input(INPUT_SERVER, 'SERVER_PROTOCOL', FILTER_SANITIZE_STRING);
+        header($serverProtocol.' 200 OK');
+        header('Content-Encoding: none');
+        header('Content-Length: '.ob_get_length());
+        header('Connection: close');
+
+        ob_end_flush();
         ob_flush();
-        flush(); // Unless both are called !
-        @flush(); // Unless both are called !
-        // Slack request has been acknowledged
+        flush();
+    }
+
+    public function buildSlackBlocksForCollection($taskCollection) {
 
         foreach ($taskCollection as $id => $task) {
             $block = $this->buildSlackBlockForCardArray($task, $task['id']);
@@ -573,6 +615,13 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                                "text" => array(
                                    "type" => "mrkdwn",
                                    "text" => "*/kanboard search _<string>_* = Search for tasks with name _<string>_",
+                               ),
+                           ), //END third section
+                           array( //BEGIN third section
+                               "type" => "section",
+                               "text" => array(
+                                   "type" => "mrkdwn",
+                                   "text" => "*/kanboard display _<task number>_* = Display task _<task number>_",
                                ),
                            ), //END third section
                        ), //END of blocks
