@@ -79,8 +79,18 @@ class SlackIntegrationController extends BaseController
                 $this->showSearchedTasks(substr($subject,7));
                 break;
             case 'display':
-                $block = $this->buildSlackBlockForCard($arr[1]);
-                $this->sendSlackBlockSeparate($block, $responseURL);
+                switch ($arr[1]) {
+                    case 'task':
+                        $block = $this->buildSlackBlockForCard($arr[2]);
+                        $this->sendSlackBlockSeparate($block, $responseURL);
+                        break;
+                    case 'board':
+                        echo "Board display";
+                        break;
+                    default:
+                        echo "Unknown display command sent - please check /kanboard help";
+                        break;
+                } //Switch
                 break;
             default:
                 if ($send_http_error_codes) { http_response_code(200); }
@@ -621,7 +631,14 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                                "type" => "section",
                                "text" => array(
                                    "type" => "mrkdwn",
-                                   "text" => "*/kanboard display _<task number>_* = Display task _<task number>_",
+                                   "text" => "*/kanboard display task _<task number>_* = Display task _<task number>_",
+                               ),
+                           ), //END third section
+                           array( //BEGIN third section
+                               "type" => "section",
+                               "text" => array(
+                                   "type" => "mrkdwn",
+                                   "text" => "*/kanboard display board _<board name>_* = Display board named _<board name>_",
                                ),
                            ), //END third section
                        ), //END of blocks
