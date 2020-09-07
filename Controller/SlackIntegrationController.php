@@ -6,8 +6,10 @@ use Kanboard\Controller\BaseController;
 use Kanboard\Model\CommentModel;
 use Kanboard\Model\TaskModel;
 use Kanbaord\Model\ProjectModel;
-use Kanbaord\Model\ColumnModel;
-use Kanbaord\Model\SwimlaneModel;
+use Kanboard\Model\ColumnModel;
+use Kanboard\Model\SwimlaneModel;
+use Kanboard\Model\UserModel;
+use Kanboard\Model\UserMetadataModel;
 
 /**
  * SlackIntegration Controller
@@ -586,12 +588,55 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
         //$this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
     } // END function buildSlackBlocksForCollection
 
+    private function getAuthorizationUserID($team, $user) {
+        $slackSentUserID = $team . "." . $user;
+//        $userMetadataTable = $this->userMetadataModel->getTable();
+        $userMetadataTable = "user_has_metadata";
+
+        // Query the user database for the Team.User combination
+        $user = $this->db
+            ->table($userMetadataTable)
+            ->ilike($userMetadataTable . '.value', '%' . $slackSentUserID . '%')
+            ->findAllByColumn($userMetadataTable . '.user_id');
+
+        if (is_array($user) ) {
+            $authorizedUser = $this->userModel->getById($user[0]);
+//$fp=file_put_contents("/tmp/SlackIntegration.log", print_r($user,true), FILE_APPEND);
+//$fp=file_put_contents("/tmp/SlackIntegration.log", print_r($authorizedUser,true), FILE_APPEND);
+$fp=file_put_contents("/tmp/SlackIntegration.log", "VALID " . print_r($authorizedUser,true), FILE_APPEND);
+            return $authorizedUser;
+        } else {
+            return false;
+            }
+
+        return false;
+    } //END function getAuthorizationUserID
+
     public function help()
     { // BEGIN function help
         header('Content-type: application/json');
+
+        $slackUser = $this->getAuthorizationUserID($_REQUEST["team_id"], $_REQUEST["user_id"]);
+        $welcomeMessage = "";
+$fp=file_put_contents("/tmp/SlackIntegration.log", print_r($slackUser,true), FILE_APPEND);
+
+        //User is known
+        if (is_array($slackUser)) {
+            $welcomeMessage = "*Welcome Kanboard user " . $slackUser["name"] . " (_" . $slackUser["email"] . "_) from Slack*";
+        } else {
+            $welcomeMessage = "*The Slack user " . $_REQUEST["user_name"] . " (_" . $_REQUEST["team_id"] . "." . $_REQUEST["user_id"] . "_) is not recognized as a Kanboard user*";
+        }
+
         //if ($send_http_error_codes) { http_response_code(200); }
         $helpMsg = array(
                        "blocks" => array( //BEGIN blocks array
+                           array( //BEGIN first section
+                               "type" => "section",
+                               "text" => array(
+                                   "type" => "mrkdwn",
+                                   "text" => $welcomeMessage,
+                               ),
+                           ), //END first section
                            array( //BEGIN first section
                                "type" => "section",
                                "text" => array(

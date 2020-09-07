@@ -21,6 +21,8 @@ class Plugin extends Base
     {
         $this->template->hook->attach('template:config:integrations', 'SlackIntegration:config/integration');
 
+        $this->template->hook->attach('template:user:integrations', 'SlackIntegration:config/user_integration');
+
         $this->route->addRoute('/slackintegration/handler', 'SlackIntegration', 'receiver', 'SlackIntegration');
         $this->applicationAccessMap->add('SlackIntegrationController', 'receiver', Role::APP_PUBLIC);
 
