@@ -171,9 +171,6 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command receiv
         $resp = curl_exec($curl);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', json_encode($slackMsg), FILE_APPEND);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($resp,true), FILE_APPEND);
-//var_dump($curlHeaders);
-//var_dump($slackMsg);
-//var_dump($resp);
         curl_close($curl);
 
     } // END function getCommentTextModal
@@ -225,7 +222,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command receiv
                              array("type"=>"mrkdwn","text"=>"<" . $cardURL . "|Open in browser>"),
                              array("type"=>"mrkdwn","text"=>"Column: `" . $column["title"] ."`"),
                              array("type"=>"mrkdwn","text"=>"Last comment: " . $display_comment),
-                             array("type"=>"mrkdwn","text"=>"Swimlane: `" . $swimlane["id"] . "`"),
+                             array("type"=>"mrkdwn","text"=>"Swimlane: `" . $swimlane["name"] . "`"),
                          );
         $cardDetails = array(
                              "type"=>"section",
@@ -377,9 +374,6 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command receiv
             CURLOPT_POSTFIELDS => json_encode($slackMsg),
         ));
         $resp = curl_exec($curl);
-//var_dump($curlHeaders);
-//var_dump($slackMsg);
-//var_dump($resp);
         curl_close($curl);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackMsg,true), FILE_APPEND);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($resp,true), FILE_APPEND);
@@ -549,7 +543,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
         foreach ($overdue as $key=>$check) {
             $taskAllowed = "no";
             if ($this->projectPermissionModel->isUserAllowed($check["project_id"], $this->kanboardUser["id"])) {
-                array_push($allowedTasks, $check);
+                array_push($allowedTasks, $this->taskFinderModel->getByID($check["id"]));
                 $taskAllowed = "yes";
             }
         } //END foreach
@@ -566,12 +560,21 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                 ->ilike(TaskModel::TABLE . '.title', '%' . $searchString . '%')
                 ->eq(TaskModel::TABLE.'.is_active', TaskModel::STATUS_OPEN)
                 ->findAllByColumn(TaskModel::TABLE . '.id');
+//dmm
+        foreach ($searched as $key=>$check) {
+            $taskAllowed = "no";
+            if ($this->projectPermissionModel->isUserAllowed($check["project_id"], $this->kanboardUser["id"])) {
+                array_push($allowedTasks, $check);
+                $taskAllowed = "yes";
+            }
+        } //END foreach
 
-        if ($searchResults == array() ) {
+        if ($allowedTasks == array() ) {
            echo "No tasks found for search string '" . $searchString . "'";
         } else {
             $this->respondOK(); //This operation could take a while and responds separately - acknowledge request to Slack
-            foreach ($searchResults as $id => $taskNum) {
+            foreach ($allowedTasks as $id => $taskNum) {
+               $task = $this->taskFinderModel->getByID($taskNum);
                $block = $this->buildSlackBlockForCard($taskNum);
                $this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
             }
