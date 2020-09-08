@@ -6,6 +6,7 @@ use Kanboard\Controller\BaseController;
 use Kanboard\Model\CommentModel;
 use Kanboard\Model\TaskModel;
 use Kanbaord\Model\ProjectModel;
+use Kanbaord\Model\ProjectPermissionModel;
 use Kanboard\Model\ColumnModel;
 use Kanboard\Model\SwimlaneModel;
 use Kanboard\Model\UserModel;
@@ -19,6 +20,10 @@ use Kanboard\Model\UserMetadataModel;
  */
 class SlackIntegrationController extends BaseController
 {
+    // Variables used throughout this class
+    private $slackUser = "";
+    private $kanboardUser = "";
+
     /**
      * Handle SlackIntegration - initial slash commands start with receiver()
      *
@@ -29,11 +34,16 @@ class SlackIntegrationController extends BaseController
         //Requests with an invalid webhook token will be rejected with an "Access denied" message
         $this->checkWebhookToken();
 
+        //Set variables used throughout this class
+        $this->slackUser = $this->getAuthorizationUserID($_REQUEST["team_id"], $_REQUEST["user_id"]);
+        $this->kanboardUser = $this->userModel->getById($this->slackUser["id"]);
+
+$fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command received\n");
+
 //Debug code
 //$req_dump = print_r($_REQUEST, true);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
-//$req_dump = print_r($_POST, true);
-//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($kanboardUser,true), FILE_APPEND);
 
         // Determine if we need to send HTTP status codes or descriptive text error messages
         $send_http_error_codes = true;
@@ -215,7 +225,7 @@ class SlackIntegrationController extends BaseController
                              array("type"=>"mrkdwn","text"=>"<" . $cardURL . "|Open in browser>"),
                              array("type"=>"mrkdwn","text"=>"Column: `" . $column["title"] ."`"),
                              array("type"=>"mrkdwn","text"=>"Last comment: " . $display_comment),
-                             array("type"=>"mrkdwn","text"=>"Swimlane: `" . $swimlane["name"] . "`"),
+                             array("type"=>"mrkdwn","text"=>"Swimlane: `" . $swimlane["id"] . "`"),
                          );
         $cardDetails = array(
                              "type"=>"section",
@@ -422,6 +432,12 @@ class SlackIntegrationController extends BaseController
         //Requests with an invalid webhook token will be rejected with an "Access denied" message
         $this->checkWebhookToken();
 
+$fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command received\n");
+
+        //Set basic variables required throughout the class
+        $this->slackUser = $this->getAuthorizationUserID($_REQUEST["team_id"], $_REQUEST["user_id"]);
+        $this->kanboardUser = $this->userModel->getById($this->slackUser["id"]);
+
 //Debug code
 $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
 
@@ -524,10 +540,22 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
     { // BEGIN function showOverdue
         // Start generating blocks for overdue Kanboard cards
         $overdue = $this->taskFinderModel->getOverdueTasks();
-        $overdue = $this->taskFinderModel->getOverdueTasksByProject(17);
+
+        $allowedTasks = array();
+
+        $fp = file_put_contents('/tmp/SlackIntegration.log', "Task processing begins\n" . print_r($this->kanboardUser,true), FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', count($overdue), FILE_APPEND);
+        // Remove tasks which the user is unallowed to see
+        foreach ($overdue as $key=>$check) {
+            $taskAllowed = "no";
+            if ($this->projectPermissionModel->isUserAllowed($check["project_id"], $this->kanboardUser["id"])) {
+                array_push($allowedTasks, $check);
+                $taskAllowed = "yes";
+            }
+        } //END foreach
 
         // Call the renderer
-        $this->buildSlackBlocksForCollection($overdue);
+        $this->buildSlackBlocksForCollection($allowedTasks);
     } // END function showOverdue
 
     public function showSearchedTasks($searchString)
@@ -603,7 +631,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
             $authorizedUser = $this->userModel->getById($user[0]);
 //$fp=file_put_contents("/tmp/SlackIntegration.log", print_r($user,true), FILE_APPEND);
 //$fp=file_put_contents("/tmp/SlackIntegration.log", print_r($authorizedUser,true), FILE_APPEND);
-$fp=file_put_contents("/tmp/SlackIntegration.log", "VALID " . print_r($authorizedUser,true), FILE_APPEND);
+//$fp=file_put_contents("/tmp/SlackIntegration.log", "VALID " . print_r($authorizedUser,true), FILE_APPEND);
             return $authorizedUser;
         } else {
             return false;
@@ -615,14 +643,12 @@ $fp=file_put_contents("/tmp/SlackIntegration.log", "VALID " . print_r($authorize
     public function help()
     { // BEGIN function help
         header('Content-type: application/json');
-
-        $slackUser = $this->getAuthorizationUserID($_REQUEST["team_id"], $_REQUEST["user_id"]);
         $welcomeMessage = "";
-$fp=file_put_contents("/tmp/SlackIntegration.log", print_r($slackUser,true), FILE_APPEND);
+//$fp=file_put_contents("/tmp/SlackIntegration.log", print_r($slackUser,true), FILE_APPEND);
 
         //User is known
-        if (is_array($slackUser)) {
-            $welcomeMessage = "*Welcome Kanboard user " . $slackUser["name"] . " (_" . $slackUser["email"] . "_) from Slack*";
+        if (is_array($this->slackUser)) {
+            $welcomeMessage = "*Welcome Kanboard user " . $this->slackUser["name"] . " (_" . $this->slackUser["email"] . "_) from Slack*";
         } else {
             $welcomeMessage = "*The Slack user " . $_REQUEST["user_name"] . " (_" . $_REQUEST["team_id"] . "." . $_REQUEST["user_id"] . "_) is not recognized as a Kanboard user*";
         }
