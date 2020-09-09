@@ -38,12 +38,16 @@ class SlackIntegrationController extends BaseController
         $this->slackUser = $this->getAuthorizationUserID($_REQUEST["team_id"], $_REQUEST["user_id"]);
         $this->kanboardUser = $this->userModel->getById($this->slackUser["id"]);
 
+        // Ensure this is an authorized request
+        $this->verifySlackSignature();
+
 $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command received\n");
 
 //Debug code
 //$req_dump = print_r($_REQUEST, true);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($kanboardUser,true), FILE_APPEND);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', print_r(getallheaders(),true), FILE_APPEND);
 
         // Determine if we need to send HTTP status codes or descriptive text error messages
         $send_http_error_codes = true;
@@ -84,7 +88,6 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command receiv
                 $this->help();
                 break;
             case 'overdue':
-                $this->respondOK(); //This operation could take a while and responds separately - acknowledge request to Slack
                 $this->showOverdue();
                 break;
             case 'search':
@@ -110,6 +113,65 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command receiv
                 break;
         } //End command switch
     }
+
+    public function interactive()
+    { //BEGIN function interactive
+        //Requests with an invalid webhook token will be rejected with an "Access denied" message
+        $this->checkWebhookToken();
+        $this->verifySlackSignature();
+
+//Debug code
+$fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
+
+//$req_dump = print_r($_REQUEST, true);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
+//$req_dump = print_r($_POST, true);
+//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
+
+        // Decode the incoming JSON request
+        $slackUpdate = json_decode($_POST['payload'],true);
+
+        //Set basic variables required throughout the class
+        $this->slackUser = $this->getAuthorizationUserID($slackUpdate["user"]["team_id"], $slackUpdate["user"]["id"]);
+        $this->kanboardUser = $this->userModel->getById($this->slackUser["id"]);
+
+        if ($slackUpdate['type'] == "block_actions") {
+            $this->slackActionSelected($slackUpdate);
+        }
+
+        if ($slackUpdate['type'] == "view_submission") {
+            $this->slackCommentSent($slackUpdate);
+        }
+
+    } //END function interactive
+
+    private function verifySlackSignature() {
+
+        // load the secret, you also can load it from env(YOUR_OWN_SLACK_SECRET)
+        $slackSigningSecret = $this->configModel->get('slackintegration_slack_signing_secret');
+
+        $headers = getallheaders();
+        if ( (!isset($headers['X-Slack-Signature'])) || (!isset($headers['X-Slack-Request-Timestamp'])) ) {
+            echo "ERROR: Required Slack headers are missing - request ignored";
+            exit(1);
+        }
+
+        $version = explode('=', $headers['X-Slack-Signature']);
+        $timestamp = $headers['X-Slack-Request-Timestamp'];
+
+        $raw_body = file_get_contents('php://input');
+
+        //$slackSignature = "{$version[0]}:$timestamp:{$request->getContent()}";
+        $slackSignature = "{$version[0]}:$timestamp:{$raw_body}";
+
+        $slackHashedSignature = hash_hmac('sha256', $slackSignature, $slackSigningSecret);
+
+        if (!hash_equals($headers['X-Slack-Signature'], "v0=$slackHashedSignature")) {
+            echo "ERROR: Slack signature verification failed - request ignored";
+            exit(1);
+        }
+    }
+    // END function verifySlackSignature
 
     private function openCommentTextDialog($cardNumber, $responseURL, $triggerID) {
 
@@ -421,38 +483,6 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command receiv
         $this->sendSlackBlockInteractive($block, $responseURL); //This replies to an interactive message
     } // END function pushCardFromSlack
 
-    public function interactive()
-    { //BEGIN function interactive
-        //Requests with an invalid webhook token will be rejected with an "Access denied" message
-        $this->checkWebhookToken();
-
-$fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command received\n");
-
-        //Set basic variables required throughout the class
-        $this->slackUser = $this->getAuthorizationUserID($_REQUEST["team_id"], $_REQUEST["user_id"]);
-        $this->kanboardUser = $this->userModel->getById($this->slackUser["id"]);
-
-//Debug code
-$fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
-
-//$req_dump = print_r($_REQUEST, true);
-//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
-//$req_dump = print_r($_POST, true);
-//$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
-
-        // Decode the incoming JSON request
-        $slackUpdate = json_decode($_POST['payload'],true);
-
-        if ($slackUpdate['type'] == "block_actions") {
-            $this->slackActionSelected($slackUpdate);
-        }
-
-        if ($slackUpdate['type'] == "view_submission") {
-            $this->slackCommentSent($slackUpdate);
-        }
-
-    } //END function interactive
-
     private function slackCommentSent($slackUpdate) {
         //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
 
@@ -548,8 +578,13 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
             }
         } //END foreach
 
-        // Call the renderer
-        $this->buildSlackBlocksForCollection($allowedTasks);
+        if ($allowedTasks == array() ) {
+           echo "No overdue tasks found.";
+        } else {
+           $this->respondOK(); //This operation could take a while and responds separately - acknowledge request to Slack
+           // Call the renderer
+           $this->buildSlackBlocksForCollection($allowedTasks);
+        }
     } // END function showOverdue
 
     public function showSearchedTasks($searchString)
@@ -560,10 +595,12 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                 ->ilike(TaskModel::TABLE . '.title', '%' . $searchString . '%')
                 ->eq(TaskModel::TABLE.'.is_active', TaskModel::STATUS_OPEN)
                 ->findAllByColumn(TaskModel::TABLE . '.id');
-//dmm
-        foreach ($searched as $key=>$check) {
+
+        $allowedTasks = array(); //Initialize blank array
+        foreach ($searchResults as $key=>$check) {
             $taskAllowed = "no";
-            if ($this->projectPermissionModel->isUserAllowed($check["project_id"], $this->kanboardUser["id"])) {
+            $task = $this->taskFinderModel->getByID($check);
+            if ($this->projectPermissionModel->isUserAllowed($task["project_id"], $this->kanboardUser["id"])) {
                 array_push($allowedTasks, $check);
                 $taskAllowed = "yes";
             }
@@ -678,13 +715,6 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                                "text" => array(
                                    "type" => "mrkdwn",
                                    "text" => "*/kanboard add _<task name>_* = Add a new task with the name _<task name>_",
-                               ),
-                           ), //END second section
-                           array( //BEGIN second section
-                               "type" => "section",
-                               "text" => array(
-                                   "type" => "mrkdwn",
-                                   "text" => "~*/kanboard comment _<task number>_ _<task name>_* = Add a comment _task name_ to card _<task number>_~",
                                ),
                            ), //END second section
                            array( //BEGIN third section

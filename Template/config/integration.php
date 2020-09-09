@@ -4,6 +4,9 @@
     <?= $this->form->label(t('Slack token'), 'slackintegration_token') ?>
     <?= $this->form->text('slackintegration_token', $values) ?>
 
+    <?= $this->form->label(t('Slack Signing Secret'), 'slackintegration_slack_signing_secret') ?>
+    <?= $this->form->text('slackintegration_slack_signing_secret', $values) ?>
+
     <?= $this->form->label(t('Protocol://Hostname:port to use for incoming task webhook (NO trailing slash)'), 'slackintegration_host_port') ?>
     <?= $this->form->text('slackintegration_host_port', $values) ?>
 
