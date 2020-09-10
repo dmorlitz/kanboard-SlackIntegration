@@ -93,14 +93,17 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command receiv
             case 'search':
                 $this->showSearchedTasks(substr($subject,7));
                 break;
+            case 'show':
             case 'display':
                 switch ($arr[1]) {
+                    case 'card':
                     case 'task':
                         $block = $this->buildSlackBlockForCard($arr[2]);
                         $this->sendSlackBlockSeparate($block, $responseURL);
                         break;
                     case 'board':
-                        echo "Board display";
+                    case 'project':
+                        $block = $this->buildSlackBlockForBoard($arr[2]);
                         break;
                     default:
                         echo "Unknown display command sent - please check /kanboard help";
@@ -196,11 +199,18 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                                   "hint"=>array("type"=>"plain_text","text"=>$task['id'] . ": Adding comment to the task named '" . $task["title"] . "'"),
                                 ),
                                 array(
+                                  "type"=>"section",
+                                  "text"=>array(
+                                     "type"=>"plain_text",
+                                     "text"=>$responseURL,
+                                   ),
+                                ),
+                                array(
                                   "type"=>"input",
                                   "element"=>array(
                                                   "type"=>"conversations_select",
                                                   "action_id"=>"comment_text",
-                                                  "placeholder"=>array("type"=>"plain_text","text"=>"Please do not change"),
+                                                  "placeholder"=>array("type"=>"plain_text","text"=>"Please do not change - Slack requires it but no message will be sent there"),
                                                   "response_url_enabled"=>true,
                                                   "default_to_current_conversation"=>true,
                                                   ),
@@ -240,6 +250,40 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
 
     private function buildSlackBlockForCard($cardNumber) {
         $task = $this->taskFinderModel->getByID($cardNumber);
+        return $this->buildSlackBlockForCardArray($task, $cardNumber);
+    } // END function buildSlackBlockForCardArray
+
+    private function buildSlackBlockForBoard($boardName) {
+        $board = $this->projectModel->getByName($boardName);
+        print_r($board,true);
+        if ($board == "") {
+           echo "A Kanboard project named " . $boardName . " was not found.  Aborting.";
+           exit(0);
+        }
+//dmm
+        $searchResults = $this->taskFinderModel->getAll($board["id"]);
+        $allowedTasks = array(); //Initialize blank array
+        foreach ($searchResults as $key=>$check) {
+            $taskAllowed = "no";
+            $task = $this->taskFinderModel->getByID($check);
+            if ($this->projectPermissionModel->isUserAllowed($check["project_id"], $this->kanboardUser["id"])) {
+                array_push($allowedTasks, $check);
+                $taskAllowed = "yes";
+            }
+        } //END foreach
+
+        if ($allowedTasks == array() ) {
+           echo "No tasks found for search string '" . $searchString . "'";
+        } else {
+            $this->respondOK(); //This operation could take a while and responds separately - acknowledge request to Slack
+            foreach ($allowedTasks as $id => $taskArray) {
+               $taskNum = $taskArray["id"];
+               $task = $this->taskFinderModel->getByID($taskNum);
+               $block = $this->buildSlackBlockForCard($taskNum);
+               $this->sendSlackBlockSeparate($block); // Send a card as a reponse to a given request
+            }
+        }
+
         return $this->buildSlackBlockForCardArray($task, $cardNumber);
     } // END function buildSlackBlockForCardArray
 
@@ -489,16 +533,18 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
         $cardHint = explode(":", $slackUpdate["view"]["blocks"][0]["hint"]["text"]);
         $cardNum = $cardHint[0];
 
-        $responseURL = $slackUpdate["response_urls"][0]["response_url"];
+//        $responseURL = $slackUpdate["response_urls"][0]["response_url"];
+        $responseURL = $slackUpdate["view"]["blocks"][1]["text"]["text"];
 
         $commandArray = $slackUpdate["view"]["state"]["values"]; //Get the values portion of the JSON
         $firstKey = array_key_first($commandArray); //This key always seems to change in the JSON
         $newComment = $commandArray[$firstKey]["comment_text"]["value"];
 
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($commandArray,true) . "\n", FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', $cardNum . "\n", FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', $firstKey . "\n", FILE_APPEND);
-        //$fp = file_put_contents('/tmp/SlackIntegration.log', $newComment . "\n", FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate,true) . "\n", FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', $cardNum . "\n", FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', $firstKey . "\n", FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', $newComment . "\n", FILE_APPEND);
+        $fp = file_put_contents('/tmp/SlackIntegration.log', $responseURL . "\n", FILE_APPEND);
 
         $task = $this->taskFinderModel->getById($cardNum);
         $this->commentModel->create(array(
@@ -735,14 +781,14 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                                "type" => "section",
                                "text" => array(
                                    "type" => "mrkdwn",
-                                   "text" => "*/kanboard display task _<task number>_* = Display task _<task number>_",
+                                   "text" => "*/kanboard (show | display) (card | task) _<task number>_* = Display task _<task number>_",
                                ),
                            ), //END third section
                            array( //BEGIN third section
                                "type" => "section",
                                "text" => array(
                                    "type" => "mrkdwn",
-                                   "text" => "*/kanboard display board _<board name>_* = Display board named _<board name>_",
+                                   "text" => "*/kanboard (show | display) display (project | board) _<board name>_* = Display board named _<board name>_",
                                ),
                            ), //END third section
                        ), //END of blocks
