@@ -202,9 +202,17 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                                   "type"=>"section",
                                   "text"=>array(
                                      "type"=>"plain_text",
+                                     "text"=>"Please just ignore the link below - it is used by Kanboard to update the message you are adding a comment to.",
+                                   ),
+                                ),
+                                array(
+                                  "type"=>"section",
+                                  "text"=>array(
+                                     "type"=>"plain_text",
                                      "text"=>$responseURL,
                                    ),
                                 ),
+                                /* Disabled conversations selection
                                 array(
                                   "type"=>"input",
                                   "element"=>array(
@@ -217,6 +225,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                                   "label"=>array("type"=>"plain_text","text"=>"Update goes to"),
                                   "hint"=>array("type"=>"plain_text","text"=>"Please do not change this value - all responses will go only to you"),
                                 ),
+                                //Disabled conversations selection */
                               ),
                 );
 
@@ -273,7 +282,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
         } //END foreach
 
         if ($allowedTasks == array() ) {
-           echo "No tasks found for search string '" . $searchString . "'";
+           echo "No tasks on the " . $searchString . " project - or you are not authorized to see that project.'" . $searchString . "'";
         } else {
             $this->respondOK(); //This operation could take a while and responds separately - acknowledge request to Slack
             foreach ($allowedTasks as $id => $taskArray) {
@@ -342,20 +351,32 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
                               "value"=>"Close card:" . strval($cardNumber),
                              ),
                         array(
-                              "text"=>array("type"=>"plain_text", "text"=>"Push 7 days", "emoji"=>true),
-                              "value"=>"Push 7 days:" . strval($cardNumber),
-                             ),
-                        array(
-                              "text"=>array("type"=>"plain_text", "text"=>"Push 30 days", "emoji"=>true),
-                              "value"=>"Push 30 days:" . strval($cardNumber),
+                              "text"=>array("type"=>"plain_text", "text"=>"Add comment", "emoji"=>true),
+                              "value"=>"Add comment:" . strval($cardNumber),
                              ),
                         array(
                               "text"=>array("type"=>"plain_text", "text"=>"Push to Monday", "emoji"=>true),
                               "value"=>"Push to Monday:" . strval($cardNumber),
                              ),
                         array(
-                              "text"=>array("type"=>"plain_text", "text"=>"Add comment", "emoji"=>true),
-                              "value"=>"Add comment:" . strval($cardNumber),
+                              "text"=>array("type"=>"plain_text", "text"=>"Push 1 day", "emoji"=>true),
+                              "value"=>"Push 1 day:" . strval($cardNumber),
+                             ),
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Push 3 days", "emoji"=>true),
+                              "value"=>"Push 3 days:" . strval($cardNumber),
+                             ),
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Push 7 days", "emoji"=>true),
+                              "value"=>"Push 7 days:" . strval($cardNumber),
+                             ),
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Push 14 days", "emoji"=>true),
+                              "value"=>"Push 14 days:" . strval($cardNumber),
+                             ),
+                        array(
+                              "text"=>array("type"=>"plain_text", "text"=>"Push 30 days", "emoji"=>true),
+                              "value"=>"Push 30 days:" . strval($cardNumber),
                              ),
                         array(
                               "text"=>array("type"=>"plain_text", "text"=>"Refresh card", "emoji"=>true),
@@ -534,17 +555,17 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
         $cardNum = $cardHint[0];
 
 //        $responseURL = $slackUpdate["response_urls"][0]["response_url"];
-        $responseURL = $slackUpdate["view"]["blocks"][1]["text"]["text"];
+        $responseURL = $slackUpdate["view"]["blocks"][2]["text"]["text"];
 
         $commandArray = $slackUpdate["view"]["state"]["values"]; //Get the values portion of the JSON
         $firstKey = array_key_first($commandArray); //This key always seems to change in the JSON
         $newComment = $commandArray[$firstKey]["comment_text"]["value"];
 
-        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate,true) . "\n", FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', $cardNum . "\n", FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', $firstKey . "\n", FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', $newComment . "\n", FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', $responseURL . "\n", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate,true) . "\n", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', $cardNum . "\n", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', $firstKey . "\n", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', $newComment . "\n", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', $responseURL . "\n", FILE_APPEND);
 
         $task = $this->taskFinderModel->getById($cardNum);
         $this->commentModel->create(array(
@@ -582,8 +603,20 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
 
         // Compute the new date
         switch ($cardAction) {
+            case 'Push 1 day':
+                $adjust = "+1 day";
+                $this->pushCardFromSlack($cardNumber, $responseURL, $adjust);
+                break;
+            case 'Push 3 days':
+                $adjust = "+3 days";
+                $this->pushCardFromSlack($cardNumber, $responseURL, $adjust);
+                break;
             case 'Push 7 days':
                 $adjust = "+7 days";
+                $this->pushCardFromSlack($cardNumber, $responseURL, $adjust);
+                break;
+            case 'Push 14 days':
+                $adjust = "+14 days";
                 $this->pushCardFromSlack($cardNumber, $responseURL, $adjust);
                 break;
             case 'Push 30 days':
