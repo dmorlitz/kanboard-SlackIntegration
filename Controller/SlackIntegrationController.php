@@ -269,7 +269,6 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
            echo "A Kanboard project named " . $boardName . " was not found.  Aborting.";
            exit(0);
         }
-//dmm
         $searchResults = $this->taskFinderModel->getAll($board["id"]);
         $allowedTasks = array(); //Initialize blank array
         foreach ($searchResults as $key=>$check) {
@@ -313,7 +312,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
         // Original combined single markdown
         $msg = "*" . $task["title"] . "* (" . $task["id"] . ") \n" .
                      "_Due: " . date("m/d/Y", intval($task["date_due"])) . "_\n" .
-                     "Last comment: " . $display_comment . "\n<" . $cardURL . "|Open in browser>";
+                     "Last comment: " . $display_comment . "\n<" . $cardURL . "|External link>";
 
 
         $msg = "*" . $task["title"] . "* (" . $task["id"] . ")";
@@ -331,8 +330,9 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
         $project = $this->projectModel->getById($task["project_id"]);
         $column = $this->columnModel->getById($task["column_id"]);
         $swimlane = $this->swimlaneModel->getById($task["swimlane_id"]);
+        $displayDateDue = intval($task["date_due"]) == 0 ? "No due date" : date("m/d/Y", intval($task["date_due"]));
         $displayFields = array(
-                             array("type"=>"mrkdwn","text"=>"_Due: `" . date("m/d/Y", intval($task["date_due"])) . "`_"),
+                             array("type"=>"mrkdwn","text"=>"_Due: `" . $displayDateDue . "`_"),
                              array("type"=>"mrkdwn","text"=>"Project: `" . $project["name"] ."`"),
                              array("type"=>"mrkdwn","text"=>"<" . $cardURL . "|Open in browser>"),
                              array("type"=>"mrkdwn","text"=>"Column: `" . $column["title"] ."`"),
