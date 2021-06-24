@@ -41,7 +41,7 @@ class SlackIntegrationController extends BaseController
         // Ensure this is an authorized request
         $this->verifySlackSignature();
 
-$fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command received\n");
+//$fp = file_put_contents('/tmp/SlackIntegration.log', "Starting RECEIVER slash command from Slack");
 
 //Debug code
 //$req_dump = print_r($_REQUEST, true);
@@ -53,10 +53,10 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command receiv
         $send_http_error_codes = true;
 
         // Get the list of valid subject fields
-        $incomingtask_subject = $this->configModel->get('incomingtask_subject');
+        $slackintegration_subject = $this->configModel->get('slackintegration_subject');
 
         //Try to find the first text field provided that has a value
-        $subject_fields = explode(",", preg_replace('/\s+/','', $incomingtask_subject));
+        $subject_fields = explode(",", preg_replace('/\s+/','', $slackintegration_subject));
         $found = false;
         $subject = "";
         foreach ($subject_fields as $subject_sent) {
@@ -124,7 +124,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Slack slash command receiv
         $this->verifySlackSignature();
 
 //Debug code
-$fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
+//$fp = file_put_contents('/tmp/SlackIntegration.log', "Starting INTERACTIVE from Slack");
 
 //$req_dump = print_r($_REQUEST, true);
 //$fp = file_put_contents('/tmp/SlackIntegration.log', $req_dump, FILE_APPEND);
@@ -592,11 +592,11 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
         $responseURL = $slackUpdate['response_url'];
 
         // Debug statemetns
-        $fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG", FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', "URL = " . $slackUpdate['response_url'], FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $cardAction, FILE_APPEND);
-        $fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $cardNumber, FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', "DEBUG", FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', print_r($slackUpdate, true), FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', "URL = " . $slackUpdate['response_url'], FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Action = " . $cardAction, FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Card = " . $cardNumber, FILE_APPEND);
 
         // Find the task to be updated
         $task = $this->taskFinderModel->getById($cardNumber);
@@ -646,7 +646,7 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
 
         $allowedTasks = array();
 
-        $fp = file_put_contents('/tmp/SlackIntegration.log', "Task processing begins\n" . print_r($this->kanboardUser,true), FILE_APPEND);
+        //$fp = file_put_contents('/tmp/SlackIntegration.log', "Task processing begins\n" . print_r($this->kanboardUser,true), FILE_APPEND);
         //$fp = file_put_contents('/tmp/SlackIntegration.log', count($overdue), FILE_APPEND);
         // Remove tasks which the user is unallowed to see
         foreach ($overdue as $key=>$check) {
@@ -842,52 +842,52 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
 
     public function addTask($subject)
     {
-        $incomingtask_subject = $this->configModel->get('slackintegration_subject');
-        $incomingtask_project_id  = $this->configModel->get('slackintegration_project_id');
-        $incomingtask_column_id   = $this->configModel->get('slackintegration_column_id');
-        $incomingtask_swimlane_id = $this->configModel->get('slackintegration_swimlane_id');
+        $slackintegration_subject = $this->configModel->get('slackintegration_subject');
+        $slackintegration_project_id  = $this->configModel->get('slackintegration_project_id');
+        $slackintegration_column_id   = $this->configModel->get('slackintegration_column_id');
+        $slackintegration_swimlane_id = $this->configModel->get('slackintegration_swimlane_id');
 
         //if ( (isset($_REQUEST['response_url'])) && (strpos($_REQUEST['response_url'], "slack.com") !== false) ) { $send_http_error_codes = false; }
 
-        if ($this->configModel->get('incomingtask_subject') == "") {
+        if ($this->configModel->get('slackintegration_subject') == "") {
            if ($send_http_error_codes) { http_response_code(500); }
            echo "ERROR: Subject field is not defined - please check your Kanboard configuration";
            exit(1);
         }
 
-        if (intval($incomingtask_project_id) == 0) {
+        if (intval($slackintegration_project_id) == 0) {
            if ($send_http_error_codes) { http_response_code(500); }
            echo "ERROR: Project to insert task into is not defined - please check your Kanboard configuration";
            exit(1);
         }
 
-        if (!in_array($incomingtask_project_id, $this->projectModel->getAllIds())) {
+        if (!in_array($slackintegration_project_id, $this->projectModel->getAllIds())) {
            if ($send_http_error_codes) { http_response_code(500); }
-           echo("ERROR: Project " . $incomingtask_project_id . " does not appear to exist - task insertion will FAIL");
+           echo("ERROR: Project " . $slackintegration_project_id . " does not appear to exist - task insertion will FAIL");
            exit(1);
         }
 
-        if (intval($incomingtask_column_id) == 0) {
+        if (intval($slackintegration_column_id) == 0) {
            if ($send_http_error_codes) { http_response_code(500); }
            echo "ERROR: Column to insert task into is not defined - please check your Kanboard configuration";
            exit(1);
         }
 
-        if ($incomingtask_project_id != $this->columnModel->getProjectId($incomingtask_column_id)) {
+        if ($slackintegration_project_id != $this->columnModel->getProjectId($slackintegration_column_id)) {
            if ($send_http_error_codes) { http_response_code(500); }
-           echo("ERROR: Column " . $incomingtask_column_id . " is not in project " . $incomingtask_project_id . " - task insertion will FAIL");
+           echo("ERROR: Column " . $slackintegration_column_id . " is not in project " . $slackintegration_project_id . " - task insertion will FAIL");
            exit(1);
         }
 
-        if (intval($incomingtask_swimlane_id) == 0) {
+        if (intval($slackintegration_swimlane_id) == 0) {
            if ($send_http_error_codes) { http_response_code(500); }
            echo "ERROR: Swimlane to insert task into is not defined - please check your Kanboard configuration";
            exit(1);
         }
 
-        if (!array_key_exists($incomingtask_swimlane_id, $this->swimlaneModel->getList($incomingtask_project_id))) {
+        if (!array_key_exists($slackintegration_swimlane_id, $this->swimlaneModel->getList($slackintegration_project_id))) {
            if ($send_http_error_codes) { http_response_code(500); }
-           echo("ERROR: Swimlane " . $incomingtask_swimlane_id . " does not appear to exist in project " . $incomingtask_project_id . " - task insertion will FAIL");
+           echo("ERROR: Swimlane " . $slackintegration_swimlane_id . " does not appear to exist in project " . $slackintegration_project_id . " - task insertion will FAIL");
            exit(1);
         }
 
@@ -907,9 +907,9 @@ $fp = file_put_contents('/tmp/SlackIntegration.log', "Starting from Slack");
 
         $result = $this->taskCreationModel->create(array(
                                                          'title' => $subject,
-                                                         'project_id' => $incomingtask_project_id,
-                                                         'column_id' => $incomingtask_column_id,
-                                                         'swimlane_id' => $incomingtask_swimlane_id,
+                                                         'project_id' => $slackintegration_project_id,
+                                                         'column_id' => $slackintegration_column_id,
+                                                         'swimlane_id' => $slackintegration_swimlane_id,
 							 'description' => $description,
                                                         )
                                                   );
